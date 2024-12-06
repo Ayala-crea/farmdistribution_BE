@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var MongoString = os.Getenv("MONGODB_URI")
+var MongoString = os.Getenv("MONGOSTRING")
 var PostgresString = os.Getenv("POSTGRESSTRING")
 
 var (
