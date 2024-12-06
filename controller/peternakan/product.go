@@ -1,12 +1,12 @@
 package peternakan
 
 import (
-	"app_farm_be/config"
-	"app_farm_be/helper/at"
-	"app_farm_be/helper/atdb"
-	"app_farm_be/helper/ghupload"
-	"app_farm_be/helper/watoken"
 	"encoding/json"
+	"farmdistribution_be/config"
+	"farmdistribution_be/helper/at"
+	"farmdistribution_be/helper/atdb"
+	"farmdistribution_be/helper/ghupload"
+	"farmdistribution_be/helper/watoken"
 	"fmt"
 	"io"
 	"log"

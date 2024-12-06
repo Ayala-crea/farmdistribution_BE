@@ -1,7 +1,7 @@
 package config
 
 import (
-	"app_farm_be/helper/atdb"
+	"farmdistribution_be/helper/atdb"
 	"fmt"
 	"log"
 	"os"

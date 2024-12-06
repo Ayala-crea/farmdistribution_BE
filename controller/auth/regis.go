@@ -1,10 +1,10 @@
 package auth
 
 import (
-	"app_farm_be/config"
-	"app_farm_be/helper/atdb"
-	"app_farm_be/model"
 	"encoding/json"
+	"farmdistribution_be/config"
+	"farmdistribution_be/helper/atdb"
+	"farmdistribution_be/model"
 	"log"
 	"net/http"
 	"time"

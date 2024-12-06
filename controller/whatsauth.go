@@ -1,8 +1,8 @@
 package controller
 
 import (
-	"app_farm_be/helper/at"
-	"app_farm_be/model"
+	"farmdistribution_be/helper/at"
+	"farmdistribution_be/model"
 	"net/http"
 )
 

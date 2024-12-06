@@ -1,10 +1,10 @@
 package alamat
 
 import (
-	"app_farm_be/config"
-	"app_farm_be/helper/at"
-	"app_farm_be/helper/watoken"
 	"encoding/json"
+	"farmdistribution_be/config"
+	"farmdistribution_be/helper/at"
+	"farmdistribution_be/helper/watoken"
 
 	"log"
 	"net/http"

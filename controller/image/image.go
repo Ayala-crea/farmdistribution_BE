@@ -1,13 +1,13 @@
 package image
 
 import (
-	"app_farm_be/config"
-	"app_farm_be/helper/at"
-	"app_farm_be/helper/ghupload"
-	"app_farm_be/helper/watoken"
-	"app_farm_be/model"
 	"database/sql"
 	"encoding/json"
+	"farmdistribution_be/config"
+	"farmdistribution_be/helper/at"
+	"farmdistribution_be/helper/ghupload"
+	"farmdistribution_be/helper/watoken"
+	"farmdistribution_be/model"
 	"io"
 	"log"
 	"net/http"

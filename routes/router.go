@@ -1,13 +1,13 @@
 package routes
 
 import (
-	"app_farm_be/controller"
-	"app_farm_be/controller/alamat"
-	"app_farm_be/controller/auth"
-	"app_farm_be/controller/image"
-	"app_farm_be/controller/peternakan"
-	"app_farm_be/controller/profile"
-	"app_farm_be/controller/role"
+	"farmdistribution_be/controller"
+	"farmdistribution_be/controller/alamat"
+	"farmdistribution_be/controller/auth"
+	"farmdistribution_be/controller/image"
+	"farmdistribution_be/controller/peternakan"
+	"farmdistribution_be/controller/profile"
+	"farmdistribution_be/controller/role"
 	"net/http"
 
 	"github.com/gorilla/mux"

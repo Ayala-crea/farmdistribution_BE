@@ -1,11 +1,11 @@
 package market
 
 import (
-	"app_farm_be/config"
-	"app_farm_be/helper/slug"
-	"app_farm_be/model"
 	"context"
 	"encoding/json"
+	"farmdistribution_be/config"
+	"farmdistribution_be/helper/slug"
+	"farmdistribution_be/model"
 	"net/http"
 	"time"
 
