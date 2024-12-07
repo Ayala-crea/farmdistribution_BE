@@ -363,6 +363,7 @@ func GetAllProdcutPeternak(w http.ResponseWriter, r *http.Request) {
     fp.stock_kg,
     fp.created_at,
     fp.updated_at,
+	fp.farm_id,
     sp.name AS status_name,
     sp.available_date
 FROM 
@@ -377,6 +378,7 @@ WHERE
 	rows, err := sqlDB.Query(query, farmID)
 	if err != nil {
 		log.Printf("[ERROR] Failed to fetch products: %v", err)
+		log.Printf("[DEBUG] Query: %s", query)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error":   "Database error",
