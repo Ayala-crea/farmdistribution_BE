@@ -312,3 +312,149 @@ func GetAllProduct(w http.ResponseWriter, r *http.Request) {
 		"data":    products,
 	})
 }
+
+func GetAllProdcutPeternak(w http.ResponseWriter, r *http.Request) {
+	sqlDB, err := config.PostgresDB.DB()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	payload, err := watoken.Decode(config.PUBLICKEY, at.GetLoginFromHeader(r))
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Unauthorized",
+			"message": "Invalid or expired token. Please log in again.",
+		})
+		return
+	}
+
+	var ownerID int64
+	query := `SELECT id_user FROM akun WHERE no_telp = $1`
+	err = sqlDB.QueryRow(query, payload.Id).Scan(&ownerID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "User not found",
+			"message": "No account found for the given phone number.",
+		})
+		return
+	}
+
+	var farmID int
+	query = `SELECT id FROM farms WHERE owner_id = $1`
+	err = sqlDB.QueryRow(query, ownerID).Scan(&farmID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Farm not found",
+			"message": "No farm found for the given user.",
+		})
+		return
+	}
+
+	query = `SELECT 
+    fp.id AS product_id,
+    fp.name AS product_name,
+    fp.description,
+    fp.price_per_kg,
+    fp.weight_per_unit,
+    fp.image_url,
+    fp.stock_kg,
+    fp.created_at,
+    fp.updated_at,
+    sp.name AS status_name,
+    sp.available_date
+FROM 
+    farm_products fp
+LEFT JOIN 
+    status_product sp
+ON 
+    fp.status_id = sp.id
+WHERE 
+    fp.farm_id = $1; -- $1 akan digantikan dengan id_farm
+`
+	rows, err := sqlDB.Query(query, farmID)
+	if err != nil {
+		log.Printf("[ERROR] Failed to fetch products: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Database error",
+			"message": "Failed to fetch products.",
+		})
+		return
+	}
+	defer rows.Close()
+
+	type Product struct {
+		ID            int64     `json:"id"`
+		Name          string    `json:"name"`
+		Description   string    `json:"description"`
+		PricePerKg    float64   `json:"price_per_kg"`
+		WeightPerUnit float64   `json:"weight_per_unit"`
+		ImageURL      string    `json:"image_url"`
+		StockKg       float64   `json:"stock_kg"`
+		CreatedAt     time.Time `json:"created_at"`
+		UpdatedAt     time.Time `json:"updated_at"`
+		FarmID        int64     `json:"farm_id"`
+		StatusName    string    `json:"status_name"`
+		AvailableDate time.Time `json:"available_date"`
+	}
+
+	var products []Product
+
+	for rows.Next() {
+		var product Product
+		err := rows.Scan(
+			&product.ID,
+			&product.Name,
+			&product.Description,
+			&product.PricePerKg,
+			&product.WeightPerUnit,
+			&product.ImageURL,
+			&product.StockKg,
+			&product.CreatedAt,
+			&product.UpdatedAt,
+			&product.FarmID,
+			&product.StatusName,
+			&product.AvailableDate,
+		)
+		if err != nil {
+			log.Printf("[ERROR] Failed to scan product row: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":   "Database error",
+				"message": "Failed to process products.",
+			})
+			return
+		}
+
+		// Konversi URL gambar menjadi format raw jika diperlukan
+		if strings.Contains(product.ImageURL, "https://github.com/") {
+			rawBaseURL := "https://raw.githubusercontent.com"
+			repoPath := "Ayala-crea/productImages/refs/heads/"
+			imagePath := strings.TrimPrefix(product.ImageURL, "https://github.com/Ayala-crea/productImages/blob/")
+			product.ImageURL = fmt.Sprintf("%s/%s%s", rawBaseURL, repoPath, imagePath)
+		}
+
+		products = append(products, product)
+	}
+
+	// Cek jika tidak ada produk
+	if len(products) == 0 {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "No products found",
+			"message": "There are no products available.",
+		})
+		return
+	}
+
+	// Response JSON
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": "Products retrieved successfully.",
+		"data":    products,
+	})
+}
