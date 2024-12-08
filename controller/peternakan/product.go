@@ -151,19 +151,23 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 	weightPerKg, _ := strconv.ParseFloat(r.FormValue("weight_per_kg"), 64)
 	stockKg, _ := strconv.ParseFloat(r.FormValue("stock_kg"), 64)
 	statusName := r.FormValue("status_name")
-	statusAvailableDate, _ := time.Parse(time.RFC3339, r.FormValue("available_date"))
 
-	// Insert Status Product
-	query = `INSERT INTO status_product (name, available_date) VALUES ($1, $2) RETURNING id`
-	statusID, err := atdb.InsertOne(sqlDB, query, statusName, statusAvailableDate)
+	inputDate := r.FormValue("available_date")
+	parsedDate, err := time.Parse("02/January/06", inputDate)
 	if err != nil {
-		// Tambahkan log untuk error
-		log.Printf("[ERROR] Failed to insert product status: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Invalid date format",
+			"message": "The date must be in format dd/Month/yy, e.g., 03/December/24.",
+		})
+		return
+	}
 
-		// Tambahkan log untuk parameter query
-		log.Printf("[DEBUG] Query: %s", query)
-		log.Printf("[DEBUG] Parameters: name=%s, available_date=%s", statusName, statusAvailableDate.Format(time.RFC3339))
+	formattedDate := parsedDate.Format(time.RFC3339)
 
+	query = `INSERT INTO status_product (name, available_date) VALUES ($1, $2) RETURNING id`
+	statusID, err := atdb.InsertOne(sqlDB, query, statusName, formattedDate)
+	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error":   "Database error",
