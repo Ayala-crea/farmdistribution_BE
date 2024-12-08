@@ -7,6 +7,7 @@ import (
 	"farmdistribution_be/helper/atdb"
 	"farmdistribution_be/helper/ghupload"
 	"farmdistribution_be/helper/watoken"
+	"farmdistribution_be/model"
 	"fmt"
 	"io"
 	"log"
@@ -463,4 +464,108 @@ WHERE
 		"message": "Products retrieved successfully.",
 		"data":    products,
 	})
+}
+
+func EditProduct(w http.ResponseWriter, r *http.Request) {
+	sqlDB, err := config.PostgresDB.DB()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Decode JWT
+	payload, err := watoken.Decode(config.PUBLICKEY, at.GetLoginFromHeader(r))
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Unauthorized",
+			"message": "Invalid or expired token. Please log in again.",
+		})
+		return
+	}
+
+	// Cari Owner ID
+	var ownerID int64
+	query := `SELECT id_user FROM akun WHERE no_telp = $1`
+	err = sqlDB.QueryRow(query, payload.Id).Scan(&ownerID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "User not found",
+			"message": "No account found for the given phone number.",
+		})
+		return
+	}
+
+	// Cari Farm ID
+	var farmID int
+	query = `SELECT id FROM farms WHERE owner_id = $1`
+	err = sqlDB.QueryRow(query, ownerID).Scan(&farmID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Farm not found",
+			"message": "No farm found for the given user.",
+		})
+		return
+	}
+
+	// Ambil ID produk dari URL
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Missing ID",
+			"message": "Please provide a valid product ID in the URL.",
+		})
+		return
+	}
+
+	// Decode payload JSON ke dalam struct model.Products
+	var product model.Products
+	if err := json.NewDecoder(r.Body).Decode(&product); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Invalid request payload",
+			"message": "Please provide a valid JSON payload.",
+		})
+		return
+	}
+
+	// Validasi apakah produk ada dan milik farm yang sama
+	var exists bool
+	query = `SELECT EXISTS (SELECT 1 FROM farm_products WHERE id = $1 AND farm_id = $2)`
+	err = sqlDB.QueryRow(query, id, farmID).Scan(&exists)
+	if err != nil || !exists {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Product not found",
+			"message": "No product found with the given ID for the authenticated user.",
+		})
+		return
+	}
+
+	// Update produk di database
+	query = `
+		UPDATE farm_products
+		SET name = $1, description = $2, price_per_kg = $3, weight_per_unit = $4, stock_kg = $5, updated_at = NOW()
+		WHERE id = $6 AND farm_id = $7
+	`
+	_, err = sqlDB.Exec(query, product.ProductName, product.Description, product.PricePerKg, product.WeightPerKg, product.StockKg, id, farmID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Database error",
+			"message": "Failed to update product details.",
+		})
+		return
+	}
+
+	// Response sukses
+	response := map[string]interface{}{
+		"status":  "success",
+		"message": "Product updated successfully.",
+		"data":    product,
+	}
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
 }

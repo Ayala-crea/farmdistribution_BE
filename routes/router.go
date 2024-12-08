@@ -76,6 +76,7 @@ func InitializeRoutes() *mux.Router {
 	router.HandleFunc("/add/product", handleCORS(peternakan.CreateProduct)).Methods("POST", "OPTIONS")
 	router.HandleFunc("/product", handleCORS(peternakan.GetAllProduct)).Methods("GET", "OPTIONS")
 	router.HandleFunc("/product/mine", handleCORS(peternakan.GetAllProdcutPeternak)).Methods("GET", "OPTIONS")
+	router.HandleFunc("/product/edit", handleCORS(peternakan.UpdatePeternakan)).Methods("PUT", "OPTIONS")
 
 	return router
 }
