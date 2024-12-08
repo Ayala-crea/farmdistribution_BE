@@ -569,3 +569,167 @@ func EditProduct(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
 }
+
+func GetProductById(w http.ResponseWriter, r *http.Request) {
+	sqlDB, err := config.PostgresDB.DB()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Decode JWT
+	payload, err := watoken.Decode(config.PUBLICKEY, at.GetLoginFromHeader(r))
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Unauthorized",
+			"message": "Invalid or expired token. Please log in again.",
+		})
+		return
+	}
+
+	// Cari Owner ID
+	var ownerID int64
+	query := `SELECT id_user FROM akun WHERE no_telp = $1`
+	err = sqlDB.QueryRow(query, payload.Id).Scan(&ownerID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "User not found",
+			"message": "No account found for the given phone number.",
+		})
+		return
+	}
+
+	// Cari Farm ID
+	var farmID int
+	query = `SELECT id FROM farms WHERE owner_id = $1`
+	err = sqlDB.QueryRow(query, ownerID).Scan(&farmID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Farm not found",
+			"message": "No farm found for the given user.",
+		})
+		return
+	}
+
+	// Ambil Product ID dari URL
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Missing ID",
+			"message": "Please provide a valid product ID in the URL.",
+		})
+		return
+	}
+
+	// Query untuk mendapatkan detail produk
+	query = `
+		SELECT 
+			fp.id, 
+			fp.name, 
+			fp.description, 
+			fp.price_per_kg, 
+			fp.weight_per_unit, 
+			fp.image_url, 
+			fp.stock_kg, 
+			fp.created_at, 
+			fp.updated_at, 
+			fp.farm_id, 
+			sp.name AS status_name, 
+			sp.available_date
+		FROM 
+			farm_products fp
+		LEFT JOIN 
+			status_product sp 
+		ON 
+			fp.status_id = sp.id
+		WHERE 
+			fp.id = $1 AND fp.farm_id = $2
+	`
+
+	// Struct untuk produk
+	type Product struct {
+		ID            int64     `json:"id"`
+		Name          string    `json:"name"`
+		Description   string    `json:"description"`
+		PricePerKg    float64   `json:"price_per_kg"`
+		WeightPerUnit float64   `json:"weight_per_unit"`
+		ImageURL      string    `json:"image_url"`
+		StockKg       float64   `json:"stock_kg"`
+		CreatedAt     time.Time `json:"created_at"`
+		UpdatedAt     time.Time `json:"updated_at"`
+		FarmID        int64     `json:"farm_id"`
+		StatusName    string    `json:"status_name"`
+		AvailableDate time.Time `json:"available_date"`
+	}
+
+	var product Product
+
+	// Eksekusi query
+	err = sqlDB.QueryRow(query, id, farmID).Scan(
+		&product.ID,
+		&product.Name,
+		&product.Description,
+		&product.PricePerKg,
+		&product.WeightPerUnit,
+		&product.ImageURL,
+		&product.StockKg,
+		&product.CreatedAt,
+		&product.UpdatedAt,
+		&product.FarmID,
+		&product.StatusName,
+		&product.AvailableDate,
+	)
+
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":   "Product not found",
+				"message": "No product found with the given ID for the authenticated user.",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Database error",
+			"message": "Failed to fetch product details.",
+		})
+		return
+	}
+
+	// Konversi URL gambar menjadi format raw jika diperlukan
+	if strings.Contains(product.ImageURL, "https://github.com/") {
+		rawBaseURL := "https://raw.githubusercontent.com"
+		repoPath := "Ayala-crea/productImages/refs/heads/"
+		imagePath := strings.TrimPrefix(product.ImageURL, "https://github.com/Ayala-crea/productImages/blob/")
+		product.ImageURL = fmt.Sprintf("%s/%s%s", rawBaseURL, repoPath, imagePath)
+	}
+
+	// Konversi format tanggal menjadi dd/Month/yy
+	formattedDate := product.AvailableDate.Format("02/January/06")
+
+	// Response sukses
+	response := map[string]interface{}{
+		"status":  "success",
+		"message": "Product retrieved successfully.",
+		"data": map[string]interface{}{
+			"id":              product.ID,
+			"name":            product.Name,
+			"description":     product.Description,
+			"price_per_kg":    product.PricePerKg,
+			"weight_per_unit": product.WeightPerUnit,
+			"image_url":       product.ImageURL,
+			"stock_kg":        product.StockKg,
+			"created_at":      product.CreatedAt,
+			"updated_at":      product.UpdatedAt,
+			"farm_id":         product.FarmID,
+			"status_name":     product.StatusName,
+			"available_date":  formattedDate,
+		},
+	}
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
