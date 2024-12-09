@@ -802,18 +802,18 @@ func GetProductById(w http.ResponseWriter, r *http.Request) {
 
 	// Struct untuk produk
 	type Product struct {
-		ID            int64     `json:"id"`
-		Name          string    `json:"name"`
-		Description   string    `json:"description"`
-		PricePerKg    float64   `json:"price_per_kg"`
-		WeightPerUnit float64   `json:"weight_per_unit"`
-		ImageURL      string    `json:"image_url"`
-		StockKg       float64   `json:"stock_kg"`
-		CreatedAt     time.Time `json:"created_at"`
-		UpdatedAt     time.Time `json:"updated_at"`
-		FarmID        int64     `json:"farm_id"`
-		StatusName    string    `json:"status_name"`
-		AvailableDate time.Time `json:"available_date"`
+		ID            int64      `json:"id"`
+		Name          string     `json:"name"`
+		Description   string     `json:"description"`
+		PricePerKg    float64    `json:"price_per_kg"`
+		WeightPerUnit float64    `json:"weight_per_unit"`
+		ImageURL      string     `json:"image_url"`
+		StockKg       float64    `json:"stock_kg"`
+		CreatedAt     time.Time  `json:"created_at"`
+		UpdatedAt     time.Time  `json:"updated_at"`
+		FarmID        int64      `json:"farm_id"`
+		StatusName    string     `json:"status_name"`
+		AvailableDate *time.Time `json:"available_date"`
 	}
 
 	var product Product
@@ -843,6 +843,7 @@ func GetProductById(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		log.Println("[ERROR] Failed to fetch product details:", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error":   "Database error",
@@ -860,8 +861,12 @@ func GetProductById(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Konversi format tanggal menjadi dd/Month/yy
-	formattedDate := product.AvailableDate.Format("02/January/06")
-
+	var formattedDate string
+	if product.AvailableDate != nil {
+		formattedDate = product.AvailableDate.Format("02/January/06")
+	} else {
+		formattedDate = "NULL" // Atau gunakan string kosong sesuai kebutuhan
+	}
 	// Response sukses
 	response := map[string]interface{}{
 		"status":  "success",
