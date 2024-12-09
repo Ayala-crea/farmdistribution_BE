@@ -133,8 +133,6 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 
 	content, _, err := ghupload.GithubUpload(GitHubAccessToken, GitHubAuthorName, GitHubAuthorEmail, fileContent, githubOrg, githubRepo, pathFile, replace)
 	if err != nil {
-		log.Printf("[ERROR] Failed to upload image to GitHub: %v", err)
-		log.Printf("[DEBUG] Details: AccessToken=%s, AuthorName=%s, AuthorEmail=%s, Org=%s, Repo=%s, PathFile=%s, Replace=%t", GitHubAccessToken, GitHubAuthorName, GitHubAuthorEmail, githubOrg, githubRepo, pathFile, replace)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error":   "Upload error",
@@ -153,18 +151,22 @@ func CreateProduct(w http.ResponseWriter, r *http.Request) {
 	statusName := r.FormValue("status_name")
 
 	inputDate := r.FormValue("available_date")
-	parsedDate, err := time.Parse("02/January/06", inputDate)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Invalid date format",
-			"message": "The date must be in format dd/Month/yy, e.g., 03/December/24.",
-		})
-		return
+	var formattedDate *string
+	if inputDate != "" {
+		parsedDate, err := time.Parse("02/January/06", inputDate)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":   "Invalid date format",
+				"message": "The date must be in format dd/Month/yy, e.g., 03/December/24.",
+			})
+			return
+		}
+		dateStr := parsedDate.Format(time.RFC3339)
+		formattedDate = &dateStr
 	}
 
-	formattedDate := parsedDate.Format(time.RFC3339)
-
+	// Insert Status Product
 	query = `INSERT INTO status_product (name, available_date) VALUES ($1, $2) RETURNING id`
 	statusID, err := atdb.InsertOne(sqlDB, query, statusName, formattedDate)
 	if err != nil {
@@ -540,6 +542,26 @@ func EditProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	type StatusProductSubset struct {
+		Name          string    `json:"name"`
+		Description   string    `json:"description"`
+		AvailableDate time.Time `json:"available_date"`
+	}
+
+	queryStatus := `SELECT name, COALESCE(description, '') AS description, COALESCE(available_date, '1970-01-01') AS available_date FROM status_product WHERE id = $1`
+	Status, err := atdb.GetOne[StatusProductSubset](sqlDB, queryStatus, currentProduct.StatusID)
+	if err != nil {
+		log.Println("[ERROR] Failed to fetch product status:", err)
+		log.Println("[DEBUG] Query:", queryStatus)
+		log.Println("[DEBUG] Status ID:", currentProduct.StatusID)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Database error",
+			"message": "Failed to fetch product status.",
+		})
+		return
+	}
+
 	err = r.ParseMultipartForm(10 << 20)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -574,6 +596,31 @@ func EditProduct(w http.ResponseWriter, r *http.Request) {
 	stockKg, err := strconv.ParseFloat(r.FormValue("stock_kg"), 64)
 	if err != nil || r.FormValue("stock_kg") == "" {
 		stockKg = currentProduct.StockKg
+	}
+
+	nameStatus := r.FormValue("status_name")
+	if nameStatus == "" {
+		nameStatus = Status.Name
+	}
+
+	inputDate := r.FormValue("available_date")
+	var formattedDate *string
+	if inputDate != "" {
+		// Parsing tanggal dari format "03/December/24" ke objek time.Time
+		parsedDate, err := time.Parse("02/January/06", inputDate)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":   "Invalid date format",
+				"message": "The date must be in format dd/Month/yy, e.g., 03/December/24.",
+			})
+			return
+		}
+
+		dateStr := parsedDate.Format("2006-01-02")
+		formattedDate = &dateStr
+	} else {
+		formattedDate = nil // Jika kosong, set nilai NULL
 	}
 
 	imageURL := currentProduct.ImageURL
@@ -638,6 +685,17 @@ func EditProduct(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		imageURL = *content.Content.HTMLURL
+	}
+
+	queryUpdateStatus := `UPDATE status_product SET name = $1, available_date = $2 WHERE id = $3`
+	_, err = sqlDB.Exec(queryUpdateStatus, nameStatus, formattedDate, currentProduct.StatusID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Database error",
+			"message": "Failed to update product status.",
+		})
+		return
 	}
 
 	// Update produk di database

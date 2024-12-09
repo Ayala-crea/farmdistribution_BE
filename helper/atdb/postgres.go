@@ -3,6 +3,7 @@ package atdb
 import (
 	"database/sql"
 	"fmt"
+	"reflect"
 )
 
 func PostgresConnect(uri string) (*sql.DB, error) {
@@ -55,9 +56,27 @@ func GetOne[T any](db *sql.DB, query string, args ...interface{}) (T, error) {
 	var result T
 	row := db.QueryRow(query, args...)
 
-	err := row.Scan(&result)
-	if err != nil {
-		return result, fmt.Errorf("failed to fetch record: %v", err)
+	// Refleksi untuk memetakan hasil query ke struct
+	resultValue := reflect.ValueOf(&result).Elem()
+	if resultValue.Kind() == reflect.Struct {
+		// Buat slice pointer untuk setiap field dalam struct
+		numFields := resultValue.NumField()
+		pointers := make([]interface{}, numFields)
+		for i := 0; i < numFields; i++ {
+			pointers[i] = resultValue.Field(i).Addr().Interface()
+		}
+
+		// Scan hasil query ke struct
+		err := row.Scan(pointers...)
+		if err != nil {
+			return result, fmt.Errorf("failed to fetch record: %v", err)
+		}
+	} else {
+		// Untuk tipe non-struct
+		err := row.Scan(&result)
+		if err != nil {
+			return result, fmt.Errorf("failed to fetch record: %v", err)
+		}
 	}
 
 	return result, nil

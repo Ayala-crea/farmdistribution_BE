@@ -21,7 +21,8 @@ type Products struct {
 }
 
 type StatusProduct struct {
-	ID            uint      `gorm:"primaryKey;autoIncrement" json:"id"`             // ID status
-	Name          string    `gorm:"type:varchar(255);not null" json:"name"`         // Nama status
-	AvailableDate time.Time `gorm:"type:timestamp" json:"available_date,omitempty"` // Tanggal ketersediaan
+	ID            uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name          string     `gorm:"type:varchar(255);not null" json:"name"`
+	Description   *string    `gorm:"description" json:"description"`
+	AvailableDate *time.Time `gorm:"type:timestamp" json:"available_date,omitempty"`
 }
