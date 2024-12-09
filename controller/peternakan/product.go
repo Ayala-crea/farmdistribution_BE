@@ -945,6 +945,18 @@ func DeleteProduk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var statusID int
+	queryStatus := `SELECT status_id FROM farm_products WHERE id = $1 AND farm_id = $2`
+	err = sqlDB.QueryRow(queryStatus, id, farmId).Scan(&statusID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Product not found",
+			"message": "No product found with the given ID for the authenticated user.",
+		})
+		return
+	}
+
 	// Delete dari farm_products
 	query = `DELETE FROM farm_products WHERE id = $1 AND farm_id = $2`
 	result, err := sqlDB.Exec(query, id, farmId)
@@ -977,8 +989,8 @@ func DeleteProduk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delete dari tabel terkait (jika ada)
-	queryStatus := `DELETE FROM status_product WHERE product_id = $1`
-	_, err = sqlDB.Exec(queryStatus, id)
+	queryStatus = `DELETE FROM status_product WHERE id = $1`
+	_, err = sqlDB.Exec(queryStatus, statusID)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
