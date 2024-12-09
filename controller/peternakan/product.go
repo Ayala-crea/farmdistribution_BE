@@ -519,6 +519,27 @@ func EditProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ambil data sebelumnya untuk validasi field kosong
+	var currentProduct struct {
+		Name        string
+		Description string
+		PricePerKg  float64
+		WeightPerKg float64
+		StockKg     float64
+		StatusID    int
+		ImageURL    string
+	}
+	query = `SELECT name, description, price_per_kg, weight_per_unit, stock_kg, status_id, image_url FROM farm_products WHERE id = $1 AND farm_id = $2`
+	err = sqlDB.QueryRow(query, id, farmID).Scan(&currentProduct.Name, &currentProduct.Description, &currentProduct.PricePerKg, &currentProduct.WeightPerKg, &currentProduct.StockKg, &currentProduct.StatusID, &currentProduct.ImageURL)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Product not found",
+			"message": "No product found with the given ID for the authenticated user.",
+		})
+		return
+	}
+
 	err = r.ParseMultipartForm(10 << 20)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -529,144 +550,104 @@ func EditProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, handler, err := r.FormFile("image")
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Invalid file",
-			"message": "Failed to retrieve file from form data.",
-		})
-		return
-	}
-	defer file.Close()
-
-	if handler.Size > 5<<20 {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "File too large",
-			"message": "File size exceeds the 5MB limit.",
-		})
-		return
-	}
-
-	allowedExtensions := []string{".jpg", ".jpeg", ".png"}
-	ext := strings.ToLower(handler.Filename[strings.LastIndex(handler.Filename, "."):])
-	isValid := false
-	for _, allowedExt := range allowedExtensions {
-		if ext == allowedExt {
-			isValid = true
-			break
-		}
-	}
-	if !isValid {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Unsupported file format",
-			"message": "Only .jpg, .jpeg, and .png are allowed.",
-		})
-		return
-	}
-
-	fileContent, err := io.ReadAll(file)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "File read error",
-			"message": "Failed to read file content.",
-		})
-		return
-	}
-
-	hashedFileName := ghupload.CalculateHash(fileContent) + handler.Filename[strings.LastIndex(handler.Filename, "."):]
-	GitHubAccessToken := config.GHAccessToken
-	GitHubAuthorName := "ayalarifki"
-	GitHubAuthorEmail := "ayalarifki@gmail.com"
-	githubOrg := "ayala-crea"
-	githubRepo := "productImages"
-	pathFile := "Products/" + hashedFileName
-	replace := true
-
-	content, _, err := ghupload.GithubUpload(GitHubAccessToken, GitHubAuthorName, GitHubAuthorEmail, fileContent, githubOrg, githubRepo, pathFile, replace)
-	if err != nil {
-		log.Printf("[ERROR] Failed to upload image to GitHub: %v", err)
-		log.Printf("[DEBUG] Details: AccessToken=%s, AuthorName=%s, AuthorEmail=%s, Org=%s, Repo=%s, PathFile=%s, Replace=%t", GitHubAccessToken, GitHubAuthorName, GitHubAuthorEmail, githubOrg, githubRepo, pathFile, replace)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Upload error",
-			"message": "Failed to upload image to GitHub.",
-		})
-		return
-	}
-	imageURL := *content.Content.HTMLURL
-
-	// Decode payload JSON ke dalam struct model.Products
+	// Validasi field kosong
 	productName := r.FormValue("product_name")
+	if productName == "" {
+		productName = currentProduct.Name
+	}
+
 	description := r.FormValue("description")
-	pricePerKg, _ := strconv.ParseFloat(r.FormValue("price_per_kg"), 64)
-	weightPerKg, _ := strconv.ParseFloat(r.FormValue("weight_per_kg"), 64)
-	stockKg, _ := strconv.ParseFloat(r.FormValue("stock_kg"), 64)
-	statusName := r.FormValue("status_name")
-
-	inputDate := r.FormValue("available_date")
-	parsedDate, err := time.Parse("02/January/06", inputDate)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Invalid date format",
-			"message": "The date must be in format dd/Month/yy, e.g., 03/December/24.",
-		})
-		return
+	if description == "" {
+		description = currentProduct.Description
 	}
 
-	formattedDate := parsedDate.Format(time.RFC3339)
-
-	// Validasi apakah produk ada dan milik farm yang sama
-	var exists bool
-	query = `SELECT EXISTS (SELECT 1 FROM farm_products WHERE id = $1 AND farm_id = $2)`
-	err = sqlDB.QueryRow(query, id, farmID).Scan(&exists)
-	if err != nil || !exists {
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Product not found",
-			"message": "No product found with the given ID for the authenticated user.",
-		})
-		return
+	pricePerKg, err := strconv.ParseFloat(r.FormValue("price_per_kg"), 64)
+	if err != nil || r.FormValue("price_per_kg") == "" {
+		pricePerKg = currentProduct.PricePerKg
 	}
 
-	var statusId int
-	query = `SELECT status_id FROM farm_products WHERE id = $1`
-	err = sqlDB.QueryRow(query, id).Scan(&statusId)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Database error",
-			"message": "Failed to get status ID.",
-		})
-		return
+	weightPerKg, err := strconv.ParseFloat(r.FormValue("weight_per_kg"), 64)
+	if err != nil || r.FormValue("weight_per_kg") == "" {
+		weightPerKg = currentProduct.WeightPerKg
 	}
 
-	queryStatusProduct := `UPDATE status_product SET name = $1, available_date = $2 WHERE id = $3`
-	StatusID, err := atdb.UpdateOne(sqlDB, queryStatusProduct, statusName, formattedDate, statusId)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error":   "Database error",
-			"message": "Failed to update status product details.",
-		})
-		return
+	stockKg, err := strconv.ParseFloat(r.FormValue("stock_kg"), 64)
+	if err != nil || r.FormValue("stock_kg") == "" {
+		stockKg = currentProduct.StockKg
+	}
+
+	imageURL := currentProduct.ImageURL
+	file, handler, err := r.FormFile("image")
+	if err == nil {
+		defer file.Close()
+
+		// Validasi file jika diunggah
+		if handler.Size > 5<<20 {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":   "File too large",
+				"message": "File size exceeds the 5MB limit.",
+			})
+			return
+		}
+
+		allowedExtensions := []string{".jpg", ".jpeg", ".png"}
+		ext := strings.ToLower(handler.Filename[strings.LastIndex(handler.Filename, "."):])
+		isValid := false
+		for _, allowedExt := range allowedExtensions {
+			if ext == allowedExt {
+				isValid = true
+				break
+			}
+		}
+		if !isValid {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":   "Unsupported file format",
+				"message": "Only .jpg, .jpeg, and .png are allowed.",
+			})
+			return
+		}
+
+		fileContent, err := io.ReadAll(file)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":   "File read error",
+				"message": "Failed to read file content.",
+			})
+			return
+		}
+
+		hashedFileName := ghupload.CalculateHash(fileContent) + handler.Filename[strings.LastIndex(handler.Filename, "."):]
+		GitHubAccessToken := config.GHAccessToken
+		GitHubAuthorName := "ayalarifki"
+		GitHubAuthorEmail := "ayalarifki@gmail.com"
+		githubOrg := "ayala-crea"
+		githubRepo := "productImages"
+		pathFile := "Products/" + hashedFileName
+		replace := true
+
+		content, _, err := ghupload.GithubUpload(GitHubAccessToken, GitHubAuthorName, GitHubAuthorEmail, fileContent, githubOrg, githubRepo, pathFile, replace)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":   "Upload error",
+				"message": "Failed to upload image to GitHub.",
+			})
+			return
+		}
+		imageURL = *content.Content.HTMLURL
 	}
 
 	// Update produk di database
 	query = `
-    UPDATE farm_products
-    SET name = $1, description = $2, price_per_kg = $3, weight_per_unit = $4, status_id = $5, image_url = $6, stock_kg = $7, updated_at = NOW()
-    WHERE id = $8 AND farm_id = $9
-	`
-	upload, err := sqlDB.Exec(query, productName, description, pricePerKg, weightPerKg, StatusID, imageURL, stockKg, id, farmID)
+        UPDATE farm_products
+        SET name = $1, description = $2, price_per_kg = $3, weight_per_unit = $4, status_id = $5, image_url = $6, stock_kg = $7, updated_at = NOW()
+        WHERE id = $8 AND farm_id = $9
+    `
+	_, err = sqlDB.Exec(query, productName, description, pricePerKg, weightPerKg, currentProduct.StatusID, imageURL, stockKg, id, farmID)
 	if err != nil {
-		log.Printf("[ERROR] Failed to update product details: %v", err)
-		log.Printf("[DEBUG] Query: %s", query)
-		log.Printf("[DEBUG] Params: %s, %s, %f, %f, %d, %s, %f, %s, %s, %d", productName, description, pricePerKg, weightPerKg, StatusID, imageURL, stockKg, formattedDate, id, farmID)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error":   "Database error",
@@ -676,13 +657,10 @@ func EditProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Response sukses
-	response := map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "success",
 		"message": "Product updated successfully.",
-		"data":    upload,
-	}
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	})
 }
 
 func GetProductById(w http.ResponseWriter, r *http.Request) {
