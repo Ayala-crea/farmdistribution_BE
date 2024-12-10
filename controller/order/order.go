@@ -93,7 +93,7 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 	insertInvoiceQuery := `
 			INSERT INTO invoice (user_id, invoice_number, payment_status, payment_method, issued_date, due_date, total_amount, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, NOW(), NOW() + INTERVAL '7 days', $5, NOW(), NOW()) RETURNING id`
-	err = tx.QueryRow(insertInvoiceQuery, ownerID, invoiceNumber, "Pending", Orders.Invoice.PaymentMethod, Orders.TotalHarga).Scan(&invoiceId)
+	err = tx.QueryRow(insertInvoiceQuery, ownerID, invoiceNumber, "Pending", Orders.PaymentMethod, Orders.TotalHarga).Scan(&invoiceId)
 	if err != nil {
 		log.Println("Error inserting invoice:", err)
 		tx.Rollback()
