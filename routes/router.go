@@ -5,6 +5,7 @@ import (
 	"farmdistribution_be/controller/alamat"
 	"farmdistribution_be/controller/auth"
 	"farmdistribution_be/controller/image"
+	"farmdistribution_be/controller/order"
 	"farmdistribution_be/controller/peternakan"
 	"farmdistribution_be/controller/profile"
 	"farmdistribution_be/controller/role"
@@ -79,6 +80,9 @@ func InitializeRoutes() *mux.Router {
 	router.HandleFunc("/product/edit", handleCORS(peternakan.EditProduct)).Methods("PUT", "OPTIONS")
 	router.HandleFunc("/product/get/", handleCORS(peternakan.GetProductById)).Methods("GET", "OPTIONS")
 	router.HandleFunc("/product/delete", handleCORS(peternakan.DeleteProduk)).Methods("DELETE", "OPTIONS")
+
+	// Order
+	router.HandleFunc("/order", handleCORS(order.CreateOrder)).Methods("POST", "OPTIONS")
 
 	return router
 }
