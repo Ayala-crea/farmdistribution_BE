@@ -47,6 +47,13 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var userID int
+	if Orders.UserID != 0 {
+		userID = Orders.UserID
+	} else {
+		userID = ownerID
+	}
+
 	// Validasi input
 	if Orders.Products[0].ProductID == 0 || Orders.Products[0].Quantity == 0 || Orders.PengirimanID == 0 {
 		http.Error(w, "Product ID, Quantity, and Pengiriman ID are required", http.StatusBadRequest)
@@ -86,14 +93,14 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate invoice number
-	invoiceNumber := fmt.Sprintf("INV-%d-%d", ownerID, time.Now().Unix())
+	invoiceNumber := fmt.Sprintf("INV-%d-%d", userID, time.Now().Unix())
 	log.Println("payment method:", Orders.Invoice.PaymentMethod)
 	var invoiceId int
 	// Insert invoice ke dalam database
 	insertInvoiceQuery := `
 			INSERT INTO invoice (user_id, invoice_number, payment_status, payment_method, issued_date, due_date, total_amount, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, NOW(), NOW() + INTERVAL '7 days', $5, NOW(), NOW()) RETURNING id`
-	err = tx.QueryRow(insertInvoiceQuery, ownerID, invoiceNumber, "Pending", Orders.PaymentMethod, Orders.TotalHarga).Scan(&invoiceId)
+	err = tx.QueryRow(insertInvoiceQuery, userID, invoiceNumber, "Pending", Orders.PaymentMethod, Orders.TotalHarga).Scan(&invoiceId)
 	if err != nil {
 		log.Println("Error inserting invoice:", err)
 		tx.Rollback()
@@ -124,7 +131,7 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 		insertOrderQuery := `
 		INSERT INTO orders (user_id, product_id, quantity, total_harga, status, pengiriman_id, invoice_id, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`
-		_, err = tx.Exec(insertOrderQuery, ownerID, product.ProductID, product.Quantity, productTotal, "Pending", Orders.PengirimanID, invoiceId)
+		_, err = tx.Exec(insertOrderQuery, userID, product.ProductID, product.Quantity, productTotal, "Pending", Orders.PengirimanID, invoiceId)
 		if err != nil {
 			log.Println("Error inserting order:", err)
 			tx.Rollback()
