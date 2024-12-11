@@ -8,6 +8,7 @@ import (
 	"farmdistribution_be/controller/order"
 	"farmdistribution_be/controller/peternakan"
 	"farmdistribution_be/controller/profile"
+	"farmdistribution_be/controller/radius"
 	"farmdistribution_be/controller/role"
 	"net/http"
 
@@ -84,6 +85,9 @@ func InitializeRoutes() *mux.Router {
 	// Order
 	router.HandleFunc("/order", handleCORS(order.CreateOrder)).Methods("POST", "OPTIONS")
 	router.HandleFunc("/all/order", handleCORS(order.GetAllOrder)).Methods("GET", "OPTIONS")
+
+	// get toko by location and radius
+	router.HandleFunc("/toko", handleCORS(radius.GetAllTokoByRadius)).Methods("GET", "OPTIONS")
 
 	return router
 }
