@@ -94,7 +94,6 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 
 	// Generate invoice number
 	invoiceNumber := fmt.Sprintf("INV-%d-%d", userID, time.Now().Unix())
-	log.Println("payment method:", Orders.Invoice.PaymentMethod)
 	var invoiceId int
 	// Insert invoice ke dalam database
 	insertInvoiceQuery := `
@@ -166,4 +165,80 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 		"product_name":   namaProduct,
 		"total_harga":    Orders.TotalHarga,
 	})
+}
+
+func GetAllOrder(w http.ResponseWriter, r *http.Request) {
+	sqlDB, err := config.PostgresDB.DB()
+	if err != nil {
+		log.Println("Database connection error:", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	payload, err := watoken.Decode(config.PUBLICKEY, at.GetLoginFromHeader(r))
+	if err != nil {
+		log.Println("Unauthorized: failed to decode token")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var ownerID int
+	query := `SELECT id_user FROM akun WHERE no_telp = $1`
+	err = sqlDB.QueryRow(query, payload.Id).Scan(&ownerID)
+	if err != nil {
+		log.Println("Error retrieving user ID:", err)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Query untuk mendapatkan semua produk milik user
+	productIDs := []int{}
+	queryProduct := `SELECT id FROM farm_products WHERE farm_id = (SELECT farm_id FROM farms WHERE owner_id = $1)`
+	rows, err := sqlDB.Query(queryProduct, ownerID)
+	if err != nil {
+		log.Println("Error retrieving products for user:", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var productID int
+		if err := rows.Scan(&productID); err != nil {
+			log.Println("Error scanning product ID:", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		productIDs = append(productIDs, productID)
+	}
+
+	// Query untuk mendapatkan semua order terkait produk tersebut
+	orders := []model.Order{}
+	queryOrders := `
+	SELECT o.id, o.user_id, o.product_id, o.quantity, o.total_harga, o.status, o.pengiriman_id, i.invoice_number, i.payment_status, i.payment_method, i.total_amount, i.issued_date, i.due_date
+	FROM orders o
+	JOIN invoice i ON o.invoice_id = i.id
+	WHERE o.product_id = ANY($1)`
+	rows, err = sqlDB.Query(queryOrders, productIDs)
+	if err != nil {
+		log.Println("Error retrieving orders:", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var order model.Order
+		if err := rows.Scan(&order.ID, &order.UserID, &order.ProductID, &order.Quantity, &order.TotalHarga, &order.Status, &order.PengirimanID, &order.Invoice.InvoiceNumber, &order.Invoice.PaymentStatus, &order.PaymentMethod, &order.Invoice.TotalAmount, &order.Invoice.IssuedDate, &order.Invoice.DueDate); err != nil {
+			log.Println("Error scanning order:", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		orders = append(orders, order)
+	}
+
+	// Response sukses
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(orders)
 }

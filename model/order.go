@@ -6,6 +6,8 @@ type Order struct {
 	ID            int       `json:"id"`
 	UserID        int       `json:"user_id"`
 	Products      []Product `json:"products"`
+	ProductID     int       `json:"product_id"`
+	Quantity      int       `json:"quantity"`
 	Status        string    `json:"status"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`

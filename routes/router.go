@@ -83,6 +83,7 @@ func InitializeRoutes() *mux.Router {
 
 	// Order
 	router.HandleFunc("/order", handleCORS(order.CreateOrder)).Methods("POST", "OPTIONS")
+	router.HandleFunc("/all/order", handleCORS(order.GetAllOrder)).Methods("GET", "OPTIONS")
 
 	return router
 }
