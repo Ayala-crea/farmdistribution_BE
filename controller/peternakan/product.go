@@ -245,18 +245,18 @@ func GetAllProduct(w http.ResponseWriter, r *http.Request) {
 
 	// Struct untuk menyimpan produk
 	type Product struct {
-		ID            int64     `json:"id"`
-		Name          string    `json:"name"`
-		Description   string    `json:"description"`
-		PricePerKg    float64   `json:"price_per_kg"`
-		WeightPerUnit float64   `json:"weight_per_unit"`
-		ImageURL      string    `json:"image_url"`
-		StockKg       float64   `json:"stock_kg"`
-		CreatedAt     time.Time `json:"created_at"`
-		UpdatedAt     time.Time `json:"updated_at"`
-		FarmID        int64     `json:"farm_id"`
-		StatusName    string    `json:"status_name"`
-		AvailableDate time.Time `json:"available_date"`
+		ID            int64      `json:"id"`
+		Name          string     `json:"name"`
+		Description   string     `json:"description"`
+		PricePerKg    float64    `json:"price_per_kg"`
+		WeightPerUnit float64    `json:"weight_per_unit"`
+		ImageURL      string     `json:"image_url"`
+		StockKg       float64    `json:"stock_kg"`
+		CreatedAt     time.Time  `json:"created_at"`
+		UpdatedAt     time.Time  `json:"updated_at"`
+		FarmID        int64      `json:"farm_id"`
+		StatusName    string     `json:"status_name"`
+		AvailableDate *time.Time `json:"available_date"`
 	}
 
 	// Menampung semua produk
