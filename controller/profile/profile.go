@@ -60,7 +60,7 @@ func GetProfile(w http.ResponseWriter, r *http.Request) {
 	`
 
 	var profile model.Profile
-	var locationWKT string
+	var locationWKT sql.NullString
 	err = sqlDB.QueryRow(query, notelp).Scan(
 		&profile.ID,
 		&profile.Nama,
@@ -100,9 +100,9 @@ func GetProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert location from WKT to lat/lon array
-	if locationWKT != "" {
+	if locationWKT.Valid {
 		var lat, lon float64
-		_, err = fmt.Sscanf(locationWKT, "POINT(%f %f)", &lon, &lat)
+		_, err = fmt.Sscanf(locationWKT.String, "POINT(%f %f)", &lon, &lat)
 		if err != nil {
 			log.Printf("Error parsing location: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
