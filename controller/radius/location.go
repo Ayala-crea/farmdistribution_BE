@@ -11,7 +11,8 @@ import (
 func GetAllTokoByRadius(w http.ResponseWriter, r *http.Request) {
 	sqlDB, err := config.PostgresDB.DB()
 	if err != nil {
-		log.Fatal(err)
+		sendErrorResponse(w, http.StatusInternalServerError, "Database connection error", err.Error())
+		return
 	}
 
 	latStr := r.URL.Query().Get("lat")
@@ -20,21 +21,23 @@ func GetAllTokoByRadius(w http.ResponseWriter, r *http.Request) {
 
 	latitude, err := strconv.ParseFloat(latStr, 64)
 	if err != nil || latitude < -90 || latitude > 90 {
-		http.Error(w, "Invalid latitude", http.StatusBadRequest)
+		sendErrorResponse(w, http.StatusBadRequest, "Invalid latitude", err.Error())
 		return
 	}
 
 	longitude, err := strconv.ParseFloat(lonStr, 64)
 	if err != nil || longitude < -180 || longitude > 180 {
-		http.Error(w, "Invalid longitude", http.StatusBadRequest)
+		sendErrorResponse(w, http.StatusBadRequest, "Invalid longitude", err.Error())
 		return
 	}
 
-	radius, err := strconv.ParseFloat(radiusStr, 64)
+	radiusInKm, err := strconv.ParseFloat(radiusStr, 64)
 	if err != nil {
-		http.Error(w, "Invalid radius", http.StatusBadRequest)
+		sendErrorResponse(w, http.StatusBadRequest, "Invalid radius", err.Error())
 		return
 	}
+
+	radius := radiusInKm * 1000
 
 	// Query untuk toko berdasarkan radius
 	query := `
@@ -59,7 +62,7 @@ WHERE ST_DWithin(
 	rows, err := sqlDB.Query(query, longitude, latitude, radius)
 	if err != nil {
 		log.Println("Error executing query:", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		sendErrorResponse(w, http.StatusInternalServerError, "Internal Server Error", err.Error())
 		return
 	}
 	defer rows.Close()
@@ -81,7 +84,7 @@ WHERE ST_DWithin(
 		err := rows.Scan(&tokoID, &namaToko, &kategori, &phonenumber, &email, &description, &gambarToko, &location, &createdAt)
 		if err != nil {
 			log.Println("Error scanning row:", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			sendErrorResponse(w, http.StatusInternalServerError, "Error scanning row", err.Error())
 			return
 		}
 
@@ -99,7 +102,7 @@ WHERE ST_DWithin(
 	}
 
 	if len(allMarkets) == 0 {
-		http.Error(w, "No stores found within the given radius", http.StatusNotFound)
+		sendErrorResponse(w, http.StatusNotFound, "No stores found within the given radius", "")
 		return
 	}
 
@@ -110,5 +113,17 @@ WHERE ST_DWithin(
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
+// Helper function to send error responses in a structured format
+func sendErrorResponse(w http.ResponseWriter, statusCode int, message string, errDetail string) {
+	response := map[string]interface{}{
+		"status":  "error",
+		"message": message,
+		"error":   errDetail,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(response)
 }
