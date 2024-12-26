@@ -2,6 +2,7 @@ package routes
 
 import (
 	"farmdistribution_be/controller"
+	"farmdistribution_be/controller/akun"
 	"farmdistribution_be/controller/alamat"
 	"farmdistribution_be/controller/auth"
 	"farmdistribution_be/controller/image"
@@ -88,6 +89,11 @@ func InitializeRoutes() *mux.Router {
 
 	// get toko by location and radius
 	router.HandleFunc("/toko", handleCORS(radius.GetAllTokoByRadius)).Methods("GET", "OPTIONS")
+
+	// get all akun user
+	router.HandleFunc("/all/akun", handleCORS(akun.GetAllAkun)).Methods("GET", "OPTIONS")
+	router.HandleFunc("/update/akun", handleCORS(akun.EditDataAkun)).Methods("PUT", "OPTIONS")
+	router.HandleFunc("/get/akun/", handleCORS(akun.GetById)).Methods("GET", "OPTIONS")
 
 	return router
 }
