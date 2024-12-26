@@ -94,6 +94,8 @@ func InitializeRoutes() *mux.Router {
 	router.HandleFunc("/all/akun", handleCORS(akun.GetAllAkun)).Methods("GET", "OPTIONS")
 	router.HandleFunc("/update/akun", handleCORS(akun.EditDataAkun)).Methods("PUT", "OPTIONS")
 	router.HandleFunc("/get/akun/", handleCORS(akun.GetById)).Methods("GET", "OPTIONS")
+	router.HandleFunc("/delete/akun", handleCORS(akun.DeleteAkun)).Methods("DELETE", "OPTIONS")
+	router.HandleFunc("/add/akun", handleCORS(akun.AddAkun)).Methods("POST", "OPTIONS")
 
 	return router
 }
