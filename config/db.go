@@ -12,11 +12,17 @@ import (
 
 var MongoString = os.Getenv("MONGOSTRING")
 var PostgresString = os.Getenv("POSTGRESSTRING")
+var MONGOSTRINGGEO = "mongodb+srv://ayalarifki:SGUHrRfraNWw3jso@geofarmradius.ij4sw.mongodb.net/?retryWrites=true&w=majority&appName=geoFarmRadius"
 
 var (
 	Mongoconn, ErrorMongoconn = atdb.MongoConnect(atdb.DBInfo{
 		DBString: MongoString,
 		DBName:   "gobizdev",
+	})
+
+	MongoconnGeo, ErrorMongoconnGeo = atdb.MongoConnect(atdb.DBInfo{
+		DBString: MONGOSTRINGGEO,
+		DBName:   "geofarmradius",
 	})
 
 	PostgresDB *gorm.DB
@@ -25,6 +31,13 @@ var (
 func init() {
 	if ErrorMongoconn != nil {
 		log.Fatalf("Failed to connect to MongoDB: %v", ErrorMongoconn)
+	} else {
+		fmt.Println("Successfully connected to MongoDB!")
+	}
+
+	// mongo untuk Geo
+	if ErrorMongoconnGeo != nil {
+		log.Fatalf("Failed to connect to MongoDB: %v", ErrorMongoconnGeo)
 	} else {
 		fmt.Println("Successfully connected to MongoDB!")
 	}
