@@ -67,6 +67,7 @@ func InitializeRoutes() *mux.Router {
 	router.HandleFunc("/peternakan/get", handleCORS(peternakan.GetPeternakan)).Methods("GET", "OPTIONS")
 	router.HandleFunc("/peternakan/update", handleCORS(peternakan.UpdatePeternakan)).Methods("PUT", "OPTIONS")
 	router.HandleFunc("/peternakan/delete", handleCORS(peternakan.DeletePeternakan)).Methods("DELETE", "OPTIONS")
+	router.HandleFunc("/all/peternak", handleCORS(peternakan.GetAllPeternak)).Methods("GET", "OPTIONS")
 
 	// Status Product
 	router.HandleFunc("/status-product", handleCORS(peternakan.CreateStatusProduct)).Methods("POST", "OPTIONS")
@@ -89,6 +90,8 @@ func InitializeRoutes() *mux.Router {
 
 	// get toko by location and radius
 	router.HandleFunc("/toko", handleCORS(radius.GetAllTokoByRadius)).Methods("GET", "OPTIONS")
+	// router.HandleFunc("/toko/radius", handleCORS(radius.GetRoadtoPoint)).Methods("POST", "OPTIONS")
+	// router.HandleFunc("/toko/road", handleCORS(radius.GetAllDataNearPoint)).Methods("POST", "OPTIONS")
 
 	// get all akun user
 	router.HandleFunc("/all/akun", handleCORS(akun.GetAllAkun)).Methods("GET", "OPTIONS")

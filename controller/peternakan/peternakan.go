@@ -504,3 +504,67 @@ func DeletePeternakan(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
 }
+
+func GetAllPeternak(w http.ResponseWriter, r *http.Request) {
+	sqlDB, err := config.PostgresDB.DB()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Query untuk mendapatkan semua data peternak
+	query := `
+		SELECT DISTINCT a.id_user, a.nama, a.no_telp, a.email, f.image_farm, f.description 
+		FROM akun a
+		JOIN farms f ON a.id_user = f.owner_id`
+
+	rows, err := sqlDB.Query(query)
+	if err != nil {
+		log.Println("[ERROR] Failed to retrieve peternak data:", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Database error",
+			"message": "Failed to retrieve peternak data.",
+		})
+		return
+	}
+	defer rows.Close()
+
+	var peternakList []map[string]interface{}
+	for rows.Next() {
+		peternak := make(map[string]interface{})
+		var id int64
+		var nama, noTelp, email, imageFarm, description string
+
+		err := rows.Scan(&id, &nama, &noTelp, &email, &imageFarm, &description)
+		if err != nil {
+			log.Println("[ERROR] Failed to parse peternak data:", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":   "Database error",
+				"message": "Failed to parse peternak data.",
+			})
+			return
+		}
+
+		// Convert image URL to GitHub raw URL if applicable
+		if strings.Contains(imageFarm, "github.com") {
+			imageFarm = strings.Replace(imageFarm, "github.com", "raw.githubusercontent.com", 1)
+			imageFarm = strings.Replace(imageFarm, "/blob/", "/", 1)
+		}
+
+		peternak["id"] = id
+		peternak["nama"] = nama
+		peternak["no_telp"] = noTelp
+		peternak["email"] = email
+		peternak["image_farm"] = imageFarm
+		peternak["description"] = description
+		peternakList = append(peternakList, peternak)
+	}
+
+	response := map[string]interface{}{
+		"message": "Peternak fetched successfully",
+		"data":    peternakList,
+	}
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
