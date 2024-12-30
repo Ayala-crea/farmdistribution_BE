@@ -1,7 +1,9 @@
 package atdb
 
 import (
+	"encoding/json"
 	"farmdistribution_be/helper/atapi"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -81,4 +83,16 @@ func HariLibur(thedate time.Time) (libur bool) {
 		}
 	}
 	return
+}
+
+// Helper function to send error responses in a structured format
+func SendErrorResponse(w http.ResponseWriter, statusCode int, message string, errDetail string) {
+	response := map[string]interface{}{
+		"status":  "error",
+		"message": message,
+		"error":   errDetail,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(response)
 }

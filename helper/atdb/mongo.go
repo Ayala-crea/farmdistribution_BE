@@ -134,12 +134,12 @@ func GetOneDoc[T any](db *mongo.Database, collection string, filter bson.M) (doc
 	result := db.Collection(collection).FindOne(context.Background(), filter)
 
 	// Log dokumen sebelum melakukan decode untuk memeriksa data
-	rawDoc, err := result.DecodeBytes()
+	_, err = result.DecodeBytes()
 	if err != nil {
 		log.Printf("Error fetching presensi document: %v\n", err)
 		return
 	}
-	log.Printf("Raw document before decoding: %s\n", rawDoc.String())
+	// log.Printf("Raw document before decoding: %s\n", rawDoc.String())
 
 	// Decode dokumen ke struct yang diminta
 	err = result.Decode(&doc)

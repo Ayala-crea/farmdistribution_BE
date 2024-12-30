@@ -1,6 +1,7 @@
 package order
 
 import (
+	"database/sql"
 	"encoding/json"
 	"farmdistribution_be/config"
 	"farmdistribution_be/helper/at"
@@ -241,4 +242,81 @@ func GetAllOrder(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(orders)
+}
+
+func GetOrderById(w http.ResponseWriter, r *http.Request) {
+	// Mendapatkan koneksi database
+	sqlDB, err := config.PostgresDB.DB()
+	if err != nil {
+		log.Println("Database connection error:", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Validasi token
+	_, err = watoken.Decode(config.PUBLICKEY, at.GetLoginFromHeader(r))
+	if err != nil {
+		log.Println("Unauthorized: failed to decode token")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Mendapatkan farm_id dari query parameter
+	farmId := r.URL.Query().Get("farm_id")
+	if farmId == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"message": "Farm ID is required",
+		})
+		return
+	}
+
+	// Query untuk mendapatkan data farm
+	queryGet := `
+		SELECT 
+			f.name AS farm_name, f.farm_type, f.phonenumber_farm, f.email, f.description, 
+			ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lon, f.image_farm,
+			o.name AS owner_name, 
+			a.street, a.city, a.province, a.postal_code, a.country
+		FROM farms f
+		LEFT JOIN owners o ON f.owner_id = o.id
+		LEFT JOIN addresses a ON f.address_id = a.id
+		WHERE f.id = $1`
+
+	// Eksekusi query
+	row := sqlDB.QueryRow(queryGet, farmId)
+
+	// Variabel untuk menyimpan data farm
+	var farm model.Farms
+	var lat, lon float64
+	err = row.Scan(
+		&farm.Name, &farm.Farm_Type, &farm.PhonenumberFam, &farm.Email, &farm.Description,
+		&lat, &lon, &farm.FamrsImageURL,
+		&farm.Name, &farm.Street, &farm.City, &farm.State, &farm.PostalCode, &farm.Country,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Println("No farm found with the provided ID")
+			http.Error(w, "Farm not found", http.StatusNotFound)
+			return
+		}
+		log.Println("Error scanning farm data:", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Set lokasi (latitude dan longitude)
+	farm.Lat = lat
+	farm.Lon = lon
+
+	// Membentuk respons
+	response := map[string]interface{}{
+		"message": "Farm data retrieved successfully",
+		"farm":    farm,
+	}
+
+	// Kirimkan respons sukses
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
 }

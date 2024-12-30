@@ -90,8 +90,11 @@ func InitializeRoutes() *mux.Router {
 
 	// get toko by location and radius
 	router.HandleFunc("/toko", handleCORS(radius.GetAllTokoByRadius)).Methods("GET", "OPTIONS")
-	// router.HandleFunc("/toko/radius", handleCORS(radius.GetRoadtoPoint)).Methods("POST", "OPTIONS")
-	// router.HandleFunc("/toko/road", handleCORS(radius.GetAllDataNearPoint)).Methods("POST", "OPTIONS")
+	router.HandleFunc("/toko/radius", handleCORS(radius.GetRoadtoPoint)).Methods("POST", "OPTIONS")
+	router.HandleFunc("/toko/road", handleCORS(radius.GetAllDataNearPoint)).Methods("POST", "OPTIONS")
+	router.HandleFunc("/toko/road/test", handleCORS(radius.GetRoads)).Methods("POST", "OPTIONS")
+	router.HandleFunc("/toko/region", handleCORS(radius.GetRegion)).Methods("POST", "OPTIONS")
+	router.HandleFunc("/toko/lokasi", handleCORS(radius.GetShortestPath)).Methods("POST", "OPTIONS")
 
 	// get all akun user
 	router.HandleFunc("/all/akun", handleCORS(akun.GetAllAkun)).Methods("GET", "OPTIONS")
