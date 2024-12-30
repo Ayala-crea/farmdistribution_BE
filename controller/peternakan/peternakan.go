@@ -513,7 +513,7 @@ func GetAllPeternak(w http.ResponseWriter, r *http.Request) {
 
 	// Query untuk mendapatkan semua data peternak
 	query := `
-		SELECT DISTINCT a.id_user, a.nama, a.no_telp, a.email, f.image_farm, f.description, ST_AsText(f.location)
+		SELECT DISTINCT a.id_user, a.nama, a.no_telp, a.email, f.id, f.name, f.image_farm, f.description, ST_AsText(f.location)
 		FROM akun a
 		JOIN farms f ON a.id_user = f.owner_id`
 
@@ -533,9 +533,11 @@ func GetAllPeternak(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		peternak := make(map[string]interface{})
 		var id int64
-		var nama, noTelp, email, imageFarm, description, locationWKT string
+		var nama, noTelp, email, name_peternakan, imageFarm, description, locationWKT string
+		var farmID int64
 
-		err := rows.Scan(&id, &nama, &noTelp, &email, &imageFarm, &description, &locationWKT)
+		// Pastikan urutan parameter sesuai dengan kolom pada query
+		err := rows.Scan(&id, &nama, &noTelp, &email, &farmID, &name_peternakan, &imageFarm, &description, &locationWKT)
 		if err != nil {
 			log.Println("[ERROR] Failed to parse peternak data:", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -568,6 +570,8 @@ func GetAllPeternak(w http.ResponseWriter, r *http.Request) {
 		peternak["nama"] = nama
 		peternak["no_telp"] = noTelp
 		peternak["email"] = email
+		peternak["farm_id"] = farmID
+		peternak["name"] = name_peternakan
 		peternak["image_farm"] = imageFarm
 		peternak["description"] = description
 		peternak["latitude"] = latitude
