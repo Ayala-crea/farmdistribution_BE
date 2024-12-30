@@ -513,7 +513,7 @@ func GetAllPeternak(w http.ResponseWriter, r *http.Request) {
 
 	// Query untuk mendapatkan semua data peternak
 	query := `
-		SELECT DISTINCT a.id_user, a.nama, a.no_telp, a.email, f.image_farm, f.description 
+		SELECT DISTINCT a.id_user, a.nama, a.no_telp, a.email, f.image_farm, f.description, ST_AsText(f.location)
 		FROM akun a
 		JOIN farms f ON a.id_user = f.owner_id`
 
@@ -533,9 +533,9 @@ func GetAllPeternak(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		peternak := make(map[string]interface{})
 		var id int64
-		var nama, noTelp, email, imageFarm, description string
+		var nama, noTelp, email, imageFarm, description, locationWKT string
 
-		err := rows.Scan(&id, &nama, &noTelp, &email, &imageFarm, &description)
+		err := rows.Scan(&id, &nama, &noTelp, &email, &imageFarm, &description, &locationWKT)
 		if err != nil {
 			log.Println("[ERROR] Failed to parse peternak data:", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -552,12 +552,26 @@ func GetAllPeternak(w http.ResponseWriter, r *http.Request) {
 			imageFarm = strings.Replace(imageFarm, "/blob/", "/", 1)
 		}
 
+		// Parse WKT to extract latitude and longitude
+		var latitude, longitude string
+		if strings.HasPrefix(locationWKT, "POINT(") {
+			coords := strings.TrimPrefix(locationWKT, "POINT(")
+			coords = strings.TrimSuffix(coords, ")")
+			latLng := strings.Split(coords, " ")
+			if len(latLng) == 2 {
+				longitude = latLng[0]
+				latitude = latLng[1]
+			}
+		}
+
 		peternak["id"] = id
 		peternak["nama"] = nama
 		peternak["no_telp"] = noTelp
 		peternak["email"] = email
 		peternak["image_farm"] = imageFarm
 		peternak["description"] = description
+		peternak["latitude"] = latitude
+		peternak["longitude"] = longitude
 		peternakList = append(peternakList, peternak)
 	}
 
