@@ -1,7 +1,6 @@
 package order
 
 import (
-	"database/sql"
 	"encoding/json"
 	"farmdistribution_be/config"
 	"farmdistribution_be/helper/at"
@@ -14,6 +13,8 @@ import (
 )
 
 func CreateOrder(w http.ResponseWriter, r *http.Request) {
+	log.Println("Memulai proses pembuatan order...")
+
 	// Mendapatkan koneksi database
 	sqlDB, err := config.PostgresDB.DB()
 	if err != nil {
@@ -21,6 +22,7 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	log.Println("Koneksi ke database berhasil.")
 
 	// Decode payload dari token
 	payload, err := watoken.Decode(config.PUBLICKEY, at.GetLoginFromHeader(r))
@@ -29,6 +31,7 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+	log.Printf("Payload token berhasil di-decode: %+v\n", payload)
 
 	// Mendapatkan ownerID dari nomor telepon
 	var ownerID int
@@ -39,83 +42,65 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+	log.Printf("Owner ID ditemukan: %d\n", ownerID)
 
 	// Decode request body untuk mendapatkan data order
-	var Orders model.Order
+	var Orders struct {
+		UserID        int             `json:"user_id"`
+		Products      []model.Product `json:"products"`
+		PengirimanID  int             `json:"pengiriman_id"`
+		PaymentMethod string          `json:"payment_method"`
+		DistanceKM    float64         `json:"distance_km"`
+		ShippingCost  float64         `json:"shipping_cost"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&Orders); err != nil {
 		log.Println("Error decoding request body:", err)
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-
-	var userID int
-	if Orders.UserID != 0 {
-		userID = Orders.UserID
-	} else {
-		userID = ownerID
-	}
+	log.Printf("Data order berhasil di-decode: %+v\n", Orders)
 
 	// Validasi input
-	if Orders.Products[0].ProductID == 0 || Orders.Products[0].Quantity == 0 || Orders.PengirimanID == 0 {
-		http.Error(w, "Product ID, Quantity, and Pengiriman ID are required", http.StatusBadRequest)
+	if len(Orders.Products) == 0 || Orders.PengirimanID == 0 {
+		log.Println("Validasi gagal: Produk atau Pengiriman ID tidak boleh kosong.")
+		http.Error(w, "Products and Pengiriman ID are required", http.StatusBadRequest)
 		return
 	}
 
-	// Mendapatkan nama produk dan harga produk
-	var productPrice float64
-	var namaProduct string
-	queryProduct := `SELECT name, price_per_kg FROM farm_products WHERE id = $1`
-	err = sqlDB.QueryRow(queryProduct, Orders.Products[0].ProductID).Scan(&namaProduct, &productPrice)
-	if err != nil {
-		log.Println("Error retrieving product details:", err)
-		http.Error(w, "Product not found", http.StatusBadRequest)
-		return
-	}
-
-	// Mendapatkan biaya pengiriman
-	var shippingCost float64
-	queryShipping := `SELECT biaya_pengiriman FROM pengiriman WHERE id = $1`
-	err = sqlDB.QueryRow(queryShipping, Orders.PengirimanID).Scan(&shippingCost)
-	if err != nil {
-		log.Println("Error retrieving shipping cost:", err)
-		http.Error(w, "Shipping method not found", http.StatusBadRequest)
-		return
-	}
-
-	// Hitung total harga
-	Orders.TotalHarga = (productPrice * float64(Orders.Products[0].Quantity)) + shippingCost
-
-	// Gunakan transaksi untuk memastikan konsistensi
+	// Mulai transaksi database
 	tx, err := sqlDB.Begin()
 	if err != nil {
 		log.Println("Failed to start transaction:", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	log.Println("Transaksi database dimulai.")
 
-	// Generate invoice number
-	invoiceNumber := fmt.Sprintf("INV-%d-%d", userID, time.Now().Unix())
+	// Generate nomor invoice
+	invoiceNumber := fmt.Sprintf("INV-%d-%d", ownerID, time.Now().Unix())
+	log.Printf("Nomor invoice yang dihasilkan: %s\n", invoiceNumber)
+
+	// Insert invoice dengan total_amount kosong
 	var invoiceId int
-	// Insert invoice ke dalam database
 	insertInvoiceQuery := `
-			INSERT INTO invoice (user_id, invoice_number, payment_status, payment_method, issued_date, due_date, total_amount, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, NOW(), NOW() + INTERVAL '7 days', $5, NOW(), NOW()) RETURNING id`
-	err = tx.QueryRow(insertInvoiceQuery, userID, invoiceNumber, "Pending", Orders.PaymentMethod, Orders.TotalHarga).Scan(&invoiceId)
+        INSERT INTO invoice (user_id, invoice_number, payment_status, payment_method, issued_date, due_date, total_amount, created_at, updated_at)
+        VALUES ($1, $2, 'Pending', $3, NOW(), NOW() + INTERVAL '7 days', 0, NOW(), NOW()) RETURNING id`
+	err = tx.QueryRow(insertInvoiceQuery, ownerID, invoiceNumber, Orders.PaymentMethod).Scan(&invoiceId)
 	if err != nil {
 		log.Println("Error inserting invoice:", err)
 		tx.Rollback()
 		http.Error(w, "Failed to create invoice", http.StatusInternalServerError)
 		return
 	}
+	log.Printf("Invoice berhasil dibuat dengan ID: %d\n", invoiceId)
 
-	// Insert order ke dalam database
-	// Proses setiap produk
-	var totalHarga float64
-	for _, product := range Orders.Products {
+	// Iterasi setiap produk dan masukkan ke tabel orders
+	for i, product := range Orders.Products {
+		log.Printf("Memproses produk ke-%d: %+v\n", i+1, product)
+
 		var productPrice float64
-		var namaProduct string
-		queryProduct := `SELECT name, price_per_kg FROM farm_products WHERE id = $1`
-		err = sqlDB.QueryRow(queryProduct, product.ProductID).Scan(&namaProduct, &productPrice)
+		queryProduct := `SELECT price_per_kg FROM farm_products WHERE id = $1`
+		err = sqlDB.QueryRow(queryProduct, product.ProductID).Scan(&productPrice)
 		if err != nil {
 			log.Println("Error retrieving product details:", err)
 			tx.Rollback()
@@ -123,32 +108,54 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Hitung harga produk
+		// Hitung total harga produk
 		productTotal := productPrice * float64(product.Quantity)
-		totalHarga += productTotal
 
-		// Insert order
+		// Insert data produk ke tabel orders
 		insertOrderQuery := `
-		INSERT INTO orders (user_id, product_id, quantity, total_harga, status, pengiriman_id, invoice_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`
-		_, err = tx.Exec(insertOrderQuery, userID, product.ProductID, product.Quantity, productTotal, "Pending", Orders.PengirimanID, invoiceId)
+            INSERT INTO orders (user_id, product_id, quantity, total_harga, status, pengiriman_id, invoice_id, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, 'Pending', $5, $6, NOW(), NOW())`
+		_, err = tx.Exec(insertOrderQuery, ownerID, product.ProductID, product.Quantity, productTotal, Orders.PengirimanID, invoiceId)
 		if err != nil {
 			log.Println("Error inserting order:", err)
 			tx.Rollback()
 			http.Error(w, "Failed to create order", http.StatusInternalServerError)
 			return
 		}
+		log.Printf("Order untuk produk ID %d berhasil dimasukkan ke database.\n", product.ProductID)
 	}
 
-	// Update total harga pada invoice
-	updateInvoiceQuery := `UPDATE invoice SET total_amount = $1 WHERE id = $2`
-	_, err = tx.Exec(updateInvoiceQuery, totalHarga, invoiceId)
+	// Hitung total amount dari tabel orders berdasarkan invoice_id
+	// Hitung total harga dari tabel orders untuk invoice_id tertentu
+	var totalHargaOrders float64
+	queryTotalHarga := `
+    SELECT COALESCE(SUM(total_harga), 0) 
+    FROM orders 
+    WHERE invoice_id = $1`
+	err = tx.QueryRow(queryTotalHarga, invoiceId).Scan(&totalHargaOrders)
 	if err != nil {
-		log.Println("Error updating invoice:", err)
+		log.Println("Error retrieving total harga from orders:", err)
 		tx.Rollback()
-		http.Error(w, "Failed to update invoice", http.StatusInternalServerError)
+		http.Error(w, "Failed to calculate total order amount", http.StatusInternalServerError)
 		return
 	}
+
+	// Hitung total amount dengan menambahkan ShippingCost
+	totalAmount := totalHargaOrders + Orders.ShippingCost
+
+	// Update total_amount di tabel invoice
+	updateInvoiceQuery := `
+    UPDATE invoice 
+    SET total_amount = $1 
+    WHERE id = $2`
+	_, err = tx.Exec(updateInvoiceQuery, totalAmount, invoiceId)
+	if err != nil {
+		log.Println("Error updating invoice total_amount:", err)
+		tx.Rollback()
+		http.Error(w, "Failed to update invoice total amount", http.StatusInternalServerError)
+		return
+	}
+	log.Printf("Invoice berhasil diperbarui dengan total amount: %f\n", totalAmount)
 
 	// Commit transaksi
 	if err := tx.Commit(); err != nil {
@@ -156,6 +163,7 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to create order and invoice", http.StatusInternalServerError)
 		return
 	}
+	log.Println("Transaksi berhasil di-commit.")
 
 	// Response sukses
 	w.Header().Set("Content-Type", "application/json")
@@ -163,89 +171,110 @@ func CreateOrder(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"message":        "Order and Invoice created successfully",
 		"invoice_number": invoiceNumber,
-		"product_name":   namaProduct,
-		"total_harga":    Orders.TotalHarga,
+		"total_harga":    totalAmount,
+		"shipping_cost":  Orders.ShippingCost,
 	})
+	log.Println("Proses pembuatan order selesai.")
 }
 
-func GetAllOrder(w http.ResponseWriter, r *http.Request) {
+// GetOrdersByFarm retrieves all orders for a specific farm
+func GetOrdersByFarm(w http.ResponseWriter, r *http.Request) {
 	sqlDB, err := config.PostgresDB.DB()
 	if err != nil {
-		log.Println("Database connection error:", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
+		log.Fatal(err)
 	}
 
 	payload, err := watoken.Decode(config.PUBLICKEY, at.GetLoginFromHeader(r))
 	if err != nil {
-		log.Println("Unauthorized: failed to decode token")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		log.Println("[ERROR] Invalid or expired token:", err)
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Unauthorized",
+			"message": "Invalid or expired token. Please log in again.",
+		})
 		return
 	}
+	noTelp := payload.Id
 
-	var ownerID int
+	var ownerID int64
 	query := `SELECT id_user FROM akun WHERE no_telp = $1`
-	err = sqlDB.QueryRow(query, payload.Id).Scan(&ownerID)
+	err = sqlDB.QueryRow(query, noTelp).Scan(&ownerID)
 	if err != nil {
-		log.Println("Error retrieving user ID:", err)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		log.Println("[ERROR] Failed to find owner ID:", err)
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "User not found",
+			"message": "No account found for the given phone number.",
+		})
+		return
+	}
+	log.Println("[INFO] Owner ID found:", ownerID)
+
+	var farmId int64
+	query = `SELECT id FROM farms WHERE owner_id = $1`
+	err = sqlDB.QueryRow(query, ownerID).Scan(&farmId)
+	if err != nil {
+		log.Println("[ERROR] Failed to find farm ID:", err)
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":   "Farm not found",
+			"message": "No farm found for the given owner ID.",
+		})
 		return
 	}
 
-	// Query untuk mendapatkan semua produk milik user
-	productIDs := []int{}
-	queryProduct := `SELECT id FROM farm_products WHERE farm_id = (SELECT farm_id FROM farms WHERE owner_id = $1)`
-	rows, err := sqlDB.Query(queryProduct, ownerID)
-	if err != nil {
-		log.Println("Error retrieving products for user:", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
+	query = `SELECT o.id, o.user_id, o.product_id, o.quantity, o.total_harga, o.status, o.invoice_id, o.created_at, o.updated_at 
+              FROM orders o
+              JOIN farm_products fp ON o.product_id = fp.id
+              WHERE fp.farm_id = $1`
 
-	for rows.Next() {
-		var productID int
-		if err := rows.Scan(&productID); err != nil {
-			log.Println("Error scanning product ID:", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		productIDs = append(productIDs, productID)
-	}
-
-	// Query untuk mendapatkan semua order terkait produk tersebut
-	orders := []model.Order{}
-	queryOrders := `
-	SELECT o.id, o.user_id, o.product_id, o.quantity, o.total_harga, o.status, o.pengiriman_id, i.invoice_number, i.payment_status, i.payment_method, i.total_amount, i.issued_date, i.due_date
-	FROM orders o
-	JOIN invoice i ON o.invoice_id = i.id
-	WHERE o.product_id = ANY($1)`
-	rows, err = sqlDB.Query(queryOrders, productIDs)
+	rows, err := sqlDB.Query(query, farmId)
 	if err != nil {
-		log.Println("Error retrieving orders:", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		log.Println("Error retrieving orders by farm:", err)
+		http.Error(w, "Failed to retrieve orders", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
 
+	var orders []map[string]interface{}
 	for rows.Next() {
 		var order model.Order
-		if err := rows.Scan(&order.ID, &order.UserID, &order.ProductID, &order.Quantity, &order.TotalHarga, &order.Status, &order.PengirimanID, &order.Invoice.InvoiceNumber, &order.Invoice.PaymentStatus, &order.PaymentMethod, &order.Invoice.TotalAmount, &order.Invoice.IssuedDate, &order.Invoice.DueDate); err != nil {
-			log.Println("Error scanning order:", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		if err := rows.Scan(&order.ID, &order.UserID, &order.ProductID, &order.Quantity, &order.TotalHarga, &order.Status, &order.InvoiceID, &order.CreatedAt, &order.UpdatedAt); err != nil {
+			log.Println("Error scanning order row:", err)
+			http.Error(w, "Failed to retrieve orders", http.StatusInternalServerError)
 			return
 		}
-		orders = append(orders, order)
+		orderMap := map[string]interface{}{
+			"id":          order.ID,
+			"user_id":     order.UserID,
+			"product_id":  order.ProductID,
+			"quantity":    order.Quantity,
+			"total_harga": order.TotalHarga,
+			"status":      order.Status,
+			"invoice_id":  order.InvoiceID,
+			"created_at":  order.CreatedAt,
+			"updated_at":  order.UpdatedAt,
+			"farm_id":     farmId,
+		}
+		orders = append(orders, orderMap)
 	}
 
-	// Response sukses
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(orders)
+	log.Println("Proses pengambilan order berdasarkan peternakan selesai.")
 }
 
-func GetOrderById(w http.ResponseWriter, r *http.Request) {
-	// Mendapatkan koneksi database
+// GetOrderByID retrieves a single order by its ID
+func GetOrderByID(w http.ResponseWriter, r *http.Request) {
+	log.Println("Memulai proses pengambilan order berdasarkan ID...")
+
+	orderID := r.URL.Query().Get("order_id")
+	if orderID == "" {
+		log.Println("Order ID tidak disediakan dalam permintaan.")
+		http.Error(w, "Order ID is required", http.StatusBadRequest)
+		return
+	}
+
 	sqlDB, err := config.PostgresDB.DB()
 	if err != nil {
 		log.Println("Database connection error:", err)
@@ -253,70 +282,171 @@ func GetOrderById(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validasi token
-	_, err = watoken.Decode(config.PUBLICKEY, at.GetLoginFromHeader(r))
+	var order model.Order
+	query := `SELECT id, user_id, product_id, quantity, total_harga, status, invoice_id, created_at, updated_at FROM orders WHERE id = $1`
+	err = sqlDB.QueryRow(query, orderID).Scan(&order.ID, &order.UserID, &order.ProductID, &order.Quantity, &order.TotalHarga, &order.Status, &order.InvoiceID, &order.CreatedAt, &order.UpdatedAt)
 	if err != nil {
-		log.Println("Unauthorized: failed to decode token")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		log.Println("Error retrieving order by ID:", err)
+		http.Error(w, "Order not found", http.StatusNotFound)
 		return
 	}
 
-	// Mendapatkan farm_id dari query parameter
-	farmId := r.URL.Query().Get("farm_id")
-	if farmId == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"message": "Farm ID is required",
-		})
+	var invoice model.Invoice
+	query = `SELECT invoice_number, total_amount, total_harga_product, created_at FROM invoice WHERE id = $1`
+	err = sqlDB.QueryRow(query, order.InvoiceID).Scan(&invoice.InvoiceNumber, &invoice.TotalAmount, &invoice.TotalHargaProduct, &invoice.CreatedAt)
+	if err != nil {
+		log.Println("Error retrieving invoice by ID:", err)
+		http.Error(w, "Invoice not found", http.StatusNotFound)
 		return
 	}
 
-	// Query untuk mendapatkan data farm
-	queryGet := `
-		SELECT 
-			f.name AS farm_name, f.farm_type, f.phonenumber_farm, f.email, f.description, 
-			ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lon, f.image_farm,
-			o.name AS owner_name, 
-			a.street, a.city, a.province, a.postal_code, a.country
-		FROM farms f
-		LEFT JOIN owners o ON f.owner_id = o.id
-		LEFT JOIN addresses a ON f.address_id = a.id
-		WHERE f.id = $1`
-
-	// Eksekusi query
-	row := sqlDB.QueryRow(queryGet, farmId)
-
-	// Variabel untuk menyimpan data farm
-	var farm model.Farms
-	var lat, lon float64
-	err = row.Scan(
-		&farm.Name, &farm.Farm_Type, &farm.PhonenumberFam, &farm.Email, &farm.Description,
-		&lat, &lon, &farm.FamrsImageURL,
-		&farm.Name, &farm.Street, &farm.City, &farm.State, &farm.PostalCode, &farm.Country,
-	)
+	var product model.Products
+	query = `SELECT name, price_per_kg FROM farm_products WHERE id = $1`
+	err = sqlDB.QueryRow(query, order.ProductID).Scan(&product.ProductName, &product.PricePerKg)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			log.Println("No farm found with the provided ID")
-			http.Error(w, "Farm not found", http.StatusNotFound)
-			return
-		}
-		log.Println("Error scanning farm data:", err)
+		log.Println("Error retrieving product by ID:", err)
+		http.Error(w, "Product not found", http.StatusNotFound)
+		return
+	}
+
+	orderMap := map[string]interface{}{
+		"id":                  order.ID,
+		"product_name":        product.ProductName,
+		"price_per_kg":        product.PricePerKg,
+		"invoice_number":      invoice.InvoiceNumber,
+		"total_amount":        invoice.TotalAmount,
+		"total_harga_product": invoice.TotalHargaProduct,
+		"user_id":             order.UserID,
+		"product_id":          order.ProductID,
+		"quantity":            order.Quantity,
+		"total_harga":         order.TotalHarga,
+		"status":              order.Status,
+		"invoice_id":          order.InvoiceID,
+		"created_at":          order.CreatedAt,
+		"updated_at":          order.UpdatedAt,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(orderMap)
+	log.Println("Proses pengambilan order berdasarkan ID selesai.")
+}
+
+// DeleteOrder deletes an order by its ID
+func DeleteOrder(w http.ResponseWriter, r *http.Request) {
+	log.Println("Memulai proses penghapusan order...")
+
+	orderID := r.URL.Query().Get("order_id")
+	if orderID == "" {
+		log.Println("Order ID tidak disediakan dalam permintaan.")
+		http.Error(w, "Order ID is required", http.StatusBadRequest)
+		return
+	}
+
+	sqlDB, err := config.PostgresDB.DB()
+	if err != nil {
+		log.Println("Database connection error:", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	// Set lokasi (latitude dan longitude)
-	farm.Lat = lat
-	farm.Lon = lon
-
-	// Membentuk respons
-	response := map[string]interface{}{
-		"message": "Farm data retrieved successfully",
-		"farm":    farm,
+	var invoiceID int64
+	invoiceQuery := `SELECT invoice_id FROM orders WHERE id = $1`
+	err = sqlDB.QueryRow(invoiceQuery, orderID).Scan(&invoiceID)
+	if err != nil {
+		log.Println("Error retrieving invoice ID for order:", err)
+		http.Error(w, "Order not found", http.StatusNotFound)
+		return
 	}
 
-	// Kirimkan respons sukses
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	deleteOrderQuery := `DELETE FROM orders WHERE id = $1`
+	result, err := sqlDB.Exec(deleteOrderQuery, orderID)
+	if err != nil {
+		log.Println("Error deleting order:", err)
+		http.Error(w, "Failed to delete order", http.StatusInternalServerError)
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		log.Println("Order not found:", orderID)
+		http.Error(w, "Order not found", http.StatusNotFound)
+		return
+	}
+
+	remainingOrdersQuery := `SELECT COUNT(*) FROM orders WHERE invoice_id = $1`
+	var remainingOrders int
+	err = sqlDB.QueryRow(remainingOrdersQuery, invoiceID).Scan(&remainingOrders)
+	if err != nil {
+		log.Println("Error checking remaining orders for invoice:", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if remainingOrders == 0 {
+		deleteInvoiceQuery := `DELETE FROM invoice WHERE id = $1`
+		_, err := sqlDB.Exec(deleteInvoiceQuery, invoiceID)
+		if err != nil {
+			log.Println("Error deleting invoice:", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		log.Println("Invoice deleted as no orders remain for it.")
+	}
+
+	response := map[string]interface{}{
+		"message":  "Order deleted successfully",
+		"order_id": orderID,
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 	json.NewEncoder(w).Encode(response)
+	log.Println("Proses penghapusan order selesai.")
+}
+
+// UpdateOrder updates an order's details
+func UpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
+	log.Println("Memulai proses pembaruan order...")
+
+	orderID := r.URL.Query().Get("invoice_id")
+	if orderID == "" {
+		log.Println("Order ID tidak disediakan dalam permintaan.")
+		http.Error(w, "Order ID is required", http.StatusBadRequest)
+		return
+	}
+
+	var updatedOrder struct {
+		Status string `json:"status"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&updatedOrder); err != nil {
+		log.Println("Error decoding request body:", err)
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	sqlDB, err := config.PostgresDB.DB()
+	if err != nil {
+		log.Println("Database connection error:", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	query := `UPDATE orders SET status = $1, updated_at = NOW() WHERE invoice_id = $2`
+	result, err := sqlDB.Exec(query, updatedOrder.Status, orderID)
+	if err != nil {
+		log.Println("Error updating order:", err)
+		http.Error(w, "Failed to update order", http.StatusInternalServerError)
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		log.Println("Order not found:", orderID)
+		http.Error(w, "Order not found", http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Order updated successfully"})
+	log.Println("Proses pembaruan order selesai.")
 }
